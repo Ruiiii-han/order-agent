@@ -1,0 +1,105 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: order-agent
+  datasource:
+    url: jdbc:h2:mem:orderagent;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE;AUTO_SERVER=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+    # 必须显式指定校验查询，否则 HikariCP 会走 JDBC4 isValid()，在部分 H2 版本上导致健康检查 DOWN
+    connection-test-query: SELECT 1
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 500ms
+  jackson:
+    default-property-inclusion: non_null
+    time-zone: Asia/Shanghai
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+  health:
+    # 本地无 Redis 时健康检查应仍为 UP（Redis 只是可选缓存，不应影响主链路）
+    redis:
+      enabled: ${REDIS_HEALTH_ENABLED:false}
+  metrics:
+    tags:
+      application: order-agent
+
+logging:
+  level:
+    com.example.orderagent: INFO
+    com.example.orderagent.agent.core: INFO
+
+# 注意：llm.* 由 LlmProperties(@ConfigurationProperties order-agent.llm) 绑定，
+#       agent/tools/eval 由 AgentProperties(@ConfigurationProperties order-agent) 绑定。
+order-agent:
+  llm:
+    provider: ${LLM_PROVIDER:mock}          # mock | openai(任何 OpenAI 兼容网关)
+    base-url: ${LLM_BASE_URL:https://api.deepseek.com}
+    api-key: ${LLM_API_KEY:}
+    model: ${LLM_MODEL:deepseek-chat}
+    temperature: 0.2
+    connect-timeout-ms: 3000
+    read-timeout-ms: 60000
+    # 输入价格 / 输出价格（元 / 1M tokens），用于成本核算；免费模型填 0
+    price-in-per-m-tokens: 1.0
+    price-out-per-m-tokens: 2.0
+    # 真实模型失败时：fallback 回落 mock（演示友好）| abort 直接失败（评测严格）
+    fallback: ${LLM_FALLBACK:fallback}
+
+    judge:
+      enabled: true
+      provider: ${LLM_JUDGE_PROVIDER:mock}
+      base-url: ${LLM_JUDGE_BASE_URL:}
+      api-key: ${LLM_JUDGE_API_KEY:}
+      model: ${EVAL_JUDGE_MODEL:mock}
+      weight-deterministic: 0.6
+      weight-judge: 0.4
+
+  # ---------- 沙箱（真实模型接入与运行时切换） ----------
+  sandbox:
+    allow-runtime-switch: true     # 生产必须关闭
+    require-real-model-for-eval: false
+
+  # ---------- Agent 执行约束 ----------
+  agent:
+    max-steps: 6                 # 最大工具轮次，防止死循环
+    max-errors: 2                # 连续工具错误容忍次数
+    tool-concurrency: 5          # 工具并发线程数（隔舱）
+    # 单个工具超时。注意：1500ms 是早期只做内存 H2 时定的，
+    # 接真实模型后 Qwen/DeepSeek 的推理间隔让 JC 压力上升，工具偶发超时，
+    # 累积失败会触发熔断器（COUNT_BASED 窗口 10 次、失败率 50%），导致整批请求被拒。
+    # 这里放宽到 5s 并降低熔断敏感度（见 ToolExecutor），否则评测会出现"假失败"。
+    tool-timeout-ms: ${TOOL_TIMEOUT_MS:5000}
+    summary-max-chars: 600       # 工具返回摘要长度上限（控制 token）
+    memory-max-turns: 6          # 会话记忆保留轮数
+    # 工具容错策略：executor(自研线程池+超时) | resilience4j(熔断/隔舱)
+    fault-strategy: executor
+
+  tools:
+    # 模拟服务的基础延迟，方便演示"慢工具"
+    simulated-latency-ms: 80
+
+  eval:
+    concurrency: 4
+    daily-regression-schedule: "0 0 3 * * *"   # 每天 03:00 自动回归
+    daily-regression-enabled: false

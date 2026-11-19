@@ -1,0 +1,36 @@
+# ---- 密钥与本地配置（重要：绝不能提交）----
+config/local-secrets.yml
+*.secrets.yml
+.env
+*secret*
+*credential*
+
+# 但示例模板必须能提交
+!config/local-secrets.example.yml
+
+# ---- 构建产物 ----
+target/
+*.jar
+*.log
+*.class
+tools/m2-repo/
+
+# ---- IDE ----
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+*.swp
+
+# ---- 系统 ----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- 临时/备份 ----
+*.bak
+*.tmp
+resume-*.json
+chunks/

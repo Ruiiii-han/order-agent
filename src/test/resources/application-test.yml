@@ -1,0 +1,17 @@
+# 测试配置：H2 换成 MySQL 模式（与生产一致），固定随机数据种子
+spring:
+  datasource:
+    url: jdbc:h2:mem:orderagent_test;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE
+  main:
+    banner-mode: off
+
+logging:
+  level:
+    root: WARN
+    com.example.orderagent: INFO
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics
